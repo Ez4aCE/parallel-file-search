@@ -65,10 +65,6 @@ func TestSearchFile(t *testing.T) {
 			}
 
 			matches, err := SearchFile(path, tt.searchTerm)
-			if err != nil {
-				t.Fatal(err)
-
-			}
 
 			if !slices.Equal(matches, tt.expectedMatches) {
 				t.Errorf("got %v, want %v", matches, tt.expectedMatches)
@@ -77,5 +73,16 @@ func TestSearchFile(t *testing.T) {
 				t.Errorf("got %v, want error", matches)
 			}
 		})
+	}
+}
+
+func TestSearchFile_FileNotFound(t *testing.T) {
+
+	matches, err := SearchFile("notHere.log", "ERROR")
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if matches != nil {
+		t.Errorf("got %v, want nil", matches)
 	}
 }
