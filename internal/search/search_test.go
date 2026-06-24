@@ -1,88 +1,143 @@
 package search
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 )
 
-type testCase struct {
+type searchFilesTestCase struct {
 	name            string
-	fileContent     string
+	files           map[string]string
+	missingFiles    []string
 	searchTerm      string
-	expectedMatches []string
-	expectErr       bool
+	expectedMatches map[string][]string
+	expectedErrors  []string
+	expectErr       error
 }
 
-func TestSearchFile(t *testing.T) {
-	tests := []testCase{
+func TestSearchFiles(t *testing.T) {
+	tests := []searchFilesTestCase{
 		{
-			name:        "multiple_matches",
-			fileContent: "INFO startup\nERROR timeout\nINFO request\nERROR invalid token",
-			searchTerm:  "ERROR",
-			expectedMatches: []string{
-				"ERROR timeout",
-				"ERROR invalid token",
+			name: "multiple_files_success",
+			files: map[string]string{
+				"app.log": `INFO startup
+ERROR timeout`,
+				"api.log":    `ERROR invalid token`,
+				"worker.log": `INFO started`,
 			},
-			expectErr: false,
-		},
-		{
-			name:            "no_matches",
-			fileContent:     "INFO startup\nINFO request\nINFO done",
-			searchTerm:      "ERROR",
-			expectedMatches: []string{},
-			expectErr:       false,
-		},
-		{
-			name:            "empty_file",
-			fileContent:     "",
-			searchTerm:      "ERROR",
-			expectedMatches: []string{},
-			expectErr:       false,
-		},
-		{
-			name:        "empty_search_term",
-			fileContent: "INFO startup\nINFO request\nINFO done",
-			searchTerm:  "",
-			expectedMatches: []string{
-				"INFO startup",
-				"INFO request",
-				"INFO done",
+			searchTerm: "ERROR",
+			expectedMatches: map[string][]string{
+				"app.log": {
+					"ERROR timeout",
+				},
+				"api.log": {
+					"ERROR invalid token",
+				},
+				"worker.log": {},
 			},
-			expectErr: false,
+		},
+		{
+			name: "partial_failure",
+			files: map[string]string{
+				"app.log": `ERROR timeout`,
+			},
+			missingFiles: []string{
+				"missing.log",
+			},
+			searchTerm: "ERROR",
+			expectedMatches: map[string][]string{
+				"app.log": {
+					"ERROR timeout",
+				},
+			},
+			expectedErrors: []string{
+				"missing.log",
+			},
+		},
+		{
+			name:       "no_files_provided",
+			searchTerm: "ERROR",
+			expectErr:  ErrNoFilesProvided,
+		},
+		{
+			name: "empty_search_term",
+			files: map[string]string{
+				"app.log": `ERROR timeout`,
+			},
+			expectErr: ErrEmptySearchTerm,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, "app.log")
-			content := []byte(tt.fileContent)
-			err := os.WriteFile(path, content, 0644)
+
+			var paths []string
+
+			for name, content := range tt.files {
+				path := filepath.Join(dir, name)
+
+				err := os.WriteFile(
+					path,
+					[]byte(content),
+					0644,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				paths = append(paths, path)
+			}
+
+			for _, name := range tt.missingFiles {
+				path := filepath.Join(dir, name)
+				paths = append(paths, path)
+			}
+
+			result, err := FilesSearch(paths, tt.searchTerm)
+
+			if tt.expectErr != nil {
+				if !errors.Is(err, tt.expectErr) {
+					t.Fatalf("got error %v, want %v", err, tt.expectErr)
+				}
+				return
+			}
 
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("unexpected error: %v", err)
 			}
 
-			matches, err := SearchFile(path, tt.searchTerm)
+			for path, expected := range tt.expectedMatches {
+				fullPath := filepath.Join(dir, path)
 
-			if !slices.Equal(matches, tt.expectedMatches) {
-				t.Errorf("got %v, want %v", matches, tt.expectedMatches)
+				got, ok := result.Matches[fullPath]
+				if !ok {
+					t.Fatalf("missing result for %s", path)
+				}
+
+				if !slices.Equal(got, expected) {
+					t.Errorf(
+						"path=%s got=%v want=%v",
+						path,
+						got,
+						expected,
+					)
+				}
 			}
-			if tt.expectErr && err == nil {
-				t.Errorf("got %v, want error", matches)
+
+			for _, file := range tt.expectedErrors {
+				fullPath := filepath.Join(dir, file)
+
+				if _, ok := result.Errors[fullPath]; !ok {
+					t.Errorf(
+						"expected error for file %s",
+						file,
+					)
+				}
 			}
 		})
-	}
-}
-
-func TestSearchFile_FileNotFound(t *testing.T) {
-
-	matches, err := SearchFile("notHere.log", "ERROR")
-	if err == nil {
-		t.Fatal("expected an error, got nil")
-	}
-	if matches != nil {
-		t.Errorf("got %v, want nil", matches)
 	}
 }
