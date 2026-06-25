@@ -97,7 +97,7 @@ ERROR timeout`,
 				paths = append(paths, path)
 			}
 
-			result, err := FilesSearch(paths, tt.searchTerm)
+			result, err := FilesSearchSequential(paths, tt.searchTerm)
 
 			if tt.expectErr != nil {
 				if !errors.Is(err, tt.expectErr) {
