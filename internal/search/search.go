@@ -5,11 +5,18 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 )
 
 type Result struct {
 	Matches map[string][]string
 	Errors  map[string]error
+}
+
+type FileResult struct {
+	Path    string
+	Matches []string
+	Err     error
 }
 
 var ErrNoFilesProvided = errors.New("no files provided")
@@ -28,14 +35,30 @@ func FilesSearch(paths []string, term string) (Result, error) {
 		Matches: make(map[string][]string),
 		Errors:  make(map[string]error),
 	}
-
+	channel := make(chan FileResult)
+	wg := sync.WaitGroup{}
 	for _, path := range paths {
-		matches, err := SingleFileSearch(path, term)
-		if err != nil {
-			result.Errors[path] = err
-			continue
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
+			matches, err := SingleFileSearch(path, term)
+			channel <- FileResult{
+				Path:    path,
+				Matches: matches,
+				Err:     err,
+			}
+		}(path)
+	}
+	go func() {
+		wg.Wait()
+		close(channel)
+	}()
+	for fileRes := range channel {
+		if fileRes.Err != nil {
+			result.Errors[fileRes.Path] = fileRes.Err
+		} else {
+			result.Matches[fileRes.Path] = fileRes.Matches
 		}
-		result.Matches[path] = matches
 	}
 
 	return result, nil
