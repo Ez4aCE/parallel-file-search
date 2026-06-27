@@ -28,7 +28,7 @@ func createBenchmarkFiles(b *testing.B, fileCount int) []string {
 }
 
 func BenchmarkFilesSearchSequential(b *testing.B) {
-	paths := createBenchmarkFiles(b, 100)
+	paths := createBenchmarkFiles(b, b.N)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := FilesSearchSequential(paths, "ERROR")
@@ -38,7 +38,7 @@ func BenchmarkFilesSearchSequential(b *testing.B) {
 	}
 }
 func BenchmarkFilesSearchConcurrent(b *testing.B) {
-	paths := createBenchmarkFiles(b, 100)
+	paths := createBenchmarkFiles(b, b.N)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := FilesSearchConcurrent(paths, "ERROR")
