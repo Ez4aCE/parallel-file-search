@@ -49,6 +49,7 @@ func FilesSearchConcurrent(paths []string, term string) (Result, error) {
 			}
 		}(path)
 	}
+
 	go func() {
 		wg.Wait()
 		close(channel)
