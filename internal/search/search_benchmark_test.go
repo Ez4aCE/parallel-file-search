@@ -1,9 +1,11 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -40,8 +42,9 @@ func BenchmarkFilesSearchSequential(b *testing.B) {
 func BenchmarkFilesSearchConcurrent(b *testing.B) {
 	paths := createBenchmarkFiles(b, b.N)
 	b.ResetTimer()
+	ctx := context.Background()
 	for i := 0; i < b.N; i++ {
-		_, err := FilesSearchConcurrent(paths, "ERROR")
+		_, err := FilesSearchConcurrent(ctx, paths, "ERROR", runtime.NumCPU())
 		if err != nil {
 			b.Fatal(err)
 		}

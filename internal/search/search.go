@@ -2,6 +2,7 @@ package search
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -22,7 +23,7 @@ type FileResult struct {
 var ErrNoFilesProvided = errors.New("no files provided")
 var ErrEmptySearchTerm = errors.New("search term is empty")
 
-func FilesSearchConcurrent(paths []string, term string) (Result, error) {
+func FilesSearchConcurrent(ctx context.Context, paths []string, term string, workers int) (Result, error) {
 
 	if len(paths) == 0 {
 		return Result{}, ErrNoFilesProvided
@@ -35,31 +36,37 @@ func FilesSearchConcurrent(paths []string, term string) (Result, error) {
 		Matches: make(map[string][]string),
 		Errors:  make(map[string]error),
 	}
-	channel := make(chan FileResult)
-	wg := sync.WaitGroup{}
-	for _, path := range paths {
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
-			matches, err := SingleFileSearch(path, term)
-			channel <- FileResult{
-				Path:    path,
-				Matches: matches,
-				Err:     err,
-			}
-		}(path)
+	if workers < 1 {
+		workers = 1
 	}
+
+	jobs := make(chan string)
+	results := make(chan FileResult)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go worker(ctx, jobs, results, &wg, term)
+	}
+	go func() {
+		defer close(jobs)
+		for _, path := range paths {
+			jobs <- path
+		}
+	}()
 
 	go func() {
 		wg.Wait()
-		close(channel)
+		close(results)
 	}()
-	for fileRes := range channel {
-		if fileRes.Err != nil {
-			result.Errors[fileRes.Path] = fileRes.Err
-		} else {
-			result.Matches[fileRes.Path] = fileRes.Matches
+
+	for res := range results {
+		if res.Err != nil {
+			result.Errors[res.Path] = res.Err
+			continue
 		}
+		result.Matches[res.Path] = res.Matches
 	}
 
 	return result, nil
